@@ -14,13 +14,13 @@ from urllib.parse import quote
 # ==========================================
 st.set_page_config(page_title="Radne dozvole – Cloud OCR", layout="centered")
 
-# 📁 Lokalne i OneDrive putanje (simulacija)
+# 📁 Lokalna struktura (radi i na Streamlit Cloud-u)
 base_dir = "Radne_Dozvole_Evidencija"
 os.makedirs(base_dir, exist_ok=True)
 
 excel_file = os.path.join(base_dir, "Radne_dozvole.xlsx")
 
-# URL korijen (koristi tvoj OneDrive SharePoint link)
+# 🌐 OneDrive URL (samo za prikaz linkova)
 one_drive_url_root = (
     "https://icars-my.sharepoint.com/personal/hr_mdrauto_intercars_eu/Documents/Documents/Radne_Dozvole_Evidencija"
 )
@@ -32,7 +32,7 @@ st.title("Automatizirana obrada radnih dozvola (Cloud verzija)")
 
 st.markdown("""
 Odaberite agenciju, učitajte PDF datoteku radne dozvole i pokrenite obradu.  
-Aplikacija izvlači podatke i sprema ih u Excel datoteku (u cloudu).
+Aplikacija će izvući podatke i spremiti ih u Excel tablicu (spremno za preuzimanje).
 """)
 
 agency_folders = {
@@ -184,8 +184,20 @@ if st.button("Pokreni obradu"):
         append_to_excel([[ime_prezime, poslodavac, radno_mjesto, vrijedi_od, vrijedi_do, link]])
         results.append(uploaded_file.name)
 
+    # ==========================================
+    # 📦 REZULTAT
+    # ==========================================
     if results:
         st.success(f"✅ Uspješno obrađeno: {len(results)} datoteka.")
         st.info("Podaci su spremljeni u **Radne_dozvole.xlsx**.")
+        
+        # 🟢 Gumb za preuzimanje
+        with open(excel_file, "rb") as f:
+            st.download_button(
+                label="⬇️ Preuzmi Excel datoteku",
+                data=f,
+                file_name="Radne_dozvole.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
     else:
         st.warning("⚠️ Nema uspješno obrađenih datoteka.")
