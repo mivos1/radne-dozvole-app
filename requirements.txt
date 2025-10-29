@@ -4,4 +4,5 @@ openpyxl
 pdf2image
 pytesseract
 pillow
-pywin32
+
+
