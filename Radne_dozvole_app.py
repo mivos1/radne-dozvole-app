@@ -10,22 +10,29 @@ import shutil
 from urllib.parse import quote
 
 # ==========================================
-# 🔧 OSNOVNA KONFIGURACIJA
+# ⚙️ OSNOVNA KONFIGURACIJA
 # ==========================================
-st.set_page_config(page_title="Radne dozvole – Automatizacija", layout="centered")
+st.set_page_config(page_title="Radne dozvole – Cloud OCR", layout="centered")
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-poppler_dir = r"C:\Python\poppler\Library\bin"
-os.environ["TESSDATA_PREFIX"] = r"C:\Program Files\Tesseract-OCR\tessdata"
+# 📁 Lokalne i OneDrive putanje (simulacija)
+base_dir = "Radne_Dozvole_Evidencija"
+os.makedirs(base_dir, exist_ok=True)
+
+excel_file = os.path.join(base_dir, "Radne_dozvole.xlsx")
+
+# URL korijen (koristi tvoj OneDrive SharePoint link)
+one_drive_url_root = (
+    "https://icars-my.sharepoint.com/personal/hr_mdrauto_intercars_eu/Documents/Documents/Radne_Dozvole_Evidencija"
+)
 
 # ==========================================
-# 🏢 Odabir agencije
+# 🧭 UI – ODABIR AGENCIJE
 # ==========================================
-st.title("Automatizirana obrada radnih dozvola")
+st.title("Automatizirana obrada radnih dozvola (Cloud verzija)")
 
 st.markdown("""
-Odaberite svoju agenciju, učitajte PDF datoteku radne dozvole i pokrenite obradu.  
-Aplikacija izvlači podatke iz učitane datoteke i sprema iste u Excel tablicu.
+Odaberite agenciju, učitajte PDF datoteku radne dozvole i pokrenite obradu.  
+Aplikacija izvlači podatke i sprema ih u Excel datoteku (u cloudu).
 """)
 
 agency_folders = {
@@ -41,30 +48,29 @@ if not selected_agency:
     st.stop()
 
 agency_folder_name = agency_folders[selected_agency]
-base_dir = r"C:\Users\hr.mdrauto.CE\OneDrive - Inter Cars S.A\Documents\Radne_Dozvole_Evidencija"
-
 pdf_root = os.path.join(base_dir, agency_folder_name)
-excel_file = os.path.join(base_dir, "Radne_dozvole.xlsm")
-one_drive_local_root = base_dir
-one_drive_url_root = (
-    f"https://icars-my.sharepoint.com/personal/hr_mdrauto_intercars_eu/Documents/Documents/Radne_Dozvole_Evidencija/{agency_folder_name}"
+processed_dir = os.path.join(pdf_root, "Processed")
+os.makedirs(processed_dir, exist_ok=True)
+
+st.success(f"✅ Odabrana agencija: {selected_agency}")
+
+# ==========================================
+# 📤 UPLOAD PDF DOKUMENATA
+# ==========================================
+uploaded_files = st.file_uploader(
+    "Odaberite PDF datoteke za obradu:",
+    type=["pdf"],
+    accept_multiple_files=True
 )
 
-st.success(f"Odabrana agencija: {selected_agency}")
-
-# ==========================================
-# 📤 Upload PDF datoteka
-# ==========================================
-uploaded_files = st.file_uploader("Odaberite PDF datoteku(e):", type=["pdf"], accept_multiple_files=True)
 if not uploaded_files:
-    st.info("Odaberite PDF datoteku koju želite obraditi.")
+    st.info("⬆️ Učitajte barem jednu PDF datoteku za nastavak.")
     st.stop()
 
 # ==========================================
-# 🧩 OCR & REGEX
+# 🧩 REGEX i OCR KONFIGURACIJA
 # ==========================================
 dpi_values = [150, 200, 300]
-known_employers = list(agency_folders.keys())
 
 sentence_pattern = re.compile(
     r"(?:\d*\.\s*Dozvola\s+za\s+boravak\s+i\s+rad\s+vrijedi\s+od\s+\d{2}\.\d{2}\.\d{4}\.?\s*do\s*\d{2}\.\d{2}\.\d{4})"
@@ -84,13 +90,9 @@ position_pattern = re.compile(
     re.IGNORECASE
 )
 
-def find_employer_in_text(text):
-    upper_text = text.upper()
-    for employer in known_employers:
-        if employer in upper_text:
-            return employer
-    return selected_agency
-
+# ==========================================
+# 🧹 FUNKCIJE
+# ==========================================
 def clean_filename_for_name(filename: str) -> str:
     name = re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE)
     name = re.sub(r"(?i)(dozvola\s+za\s+boravak\s+i\s+rad|radna\s+dozvola)", "", name)
@@ -99,28 +101,36 @@ def clean_filename_for_name(filename: str) -> str:
     return re.sub(r"\s+", " ", name).strip(" .-_")
 
 def append_to_excel(data_list):
-    book = load_workbook(excel_file, keep_vba=True)
-    sheet = book.active
-    for row_data in data_list:
-        sheet.append(row_data)
-    book.save(excel_file)
-    book.close()
+    df_new = pd.DataFrame(data_list, columns=[
+        "Ime i prezime",
+        "Poslodavac",
+        "Radno mjesto",
+        "Vrijedi od",
+        "Vrijedi do",
+        "Link"
+    ])
+    if os.path.exists(excel_file):
+        with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
+            book = writer.book
+            sheet = book.active
+            start_row = sheet.max_row + 1
+            df_new.to_excel(writer, index=False, header=False, startrow=start_row - 1)
+    else:
+        df_new.to_excel(excel_file, index=False)
 
 # ==========================================
-# ▶️ Pokretanje obrade
+# ▶️ OBRADA DOKUMENATA
 # ==========================================
 if st.button("Pokreni obradu"):
     results = []
-    processed_dir = os.path.join(pdf_root, "Processed")
-    os.makedirs(processed_dir, exist_ok=True)
-
     for uploaded_file in uploaded_files:
+        # spremi privremenu kopiju
         temp_path = os.path.join(pdf_root, uploaded_file.name)
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.read())
 
         try:
-            info = pdfinfo_from_path(temp_path, poppler_path=poppler_dir)
+            info = pdfinfo_from_path(temp_path)
         except Exception as e:
             st.error(f"Ne mogu otvoriti {uploaded_file.name}: {e}")
             continue
@@ -132,30 +142,29 @@ if st.button("Pokreni obradu"):
         vrijedi_od = "Date not found"
         vrijedi_do = "Date not found"
 
-        found_date = found_name = False
-
         for page_num in range(1, total_pages + 1):
             for dpi in dpi_values:
                 try:
-                    img_list = convert_from_path(temp_path, dpi=dpi, first_page=page_num, last_page=page_num, poppler_path=poppler_dir)
+                    img_list = convert_from_path(temp_path, dpi=dpi, first_page=page_num, last_page=page_num)
                 except Exception:
                     continue
+
                 text = pytesseract.image_to_string(img_list[0], lang='hrv')
 
-                if not found_name:
-                    m = name_pattern.search(text)
-                    if m:
-                        extracted_name = (m.group(1) or m.group(2)).strip()
-                        ime_prezime = extracted_name.title()
-                        found_name = True
+                # ime
+                m = name_pattern.search(text)
+                if m:
+                    ime_prezime = (m.group(1) or m.group(2) or ime_prezime).title()
 
+                # pozicija
                 if radno_mjesto == "Data not found":
-                    txt = re.sub(r'[-\n\r]+', ' ', text)
-                    p = position_pattern.search(txt)
+                    t_clean = re.sub(r'[-\n\r]+', ' ', text)
+                    p = position_pattern.search(t_clean)
                     if p:
                         radno_mjesto = p.group(1).strip().upper()
 
-                if not found_date:
+                # datumi
+                if vrijedi_od == "Date not found":
                     m = sentence_pattern.search(text)
                     if m:
                         dates = date_pattern.findall(m.group())
@@ -163,24 +172,20 @@ if st.button("Pokreni obradu"):
                             vrijedi_od, vrijedi_do = dates
                         elif len(dates) == 1:
                             vrijedi_do = dates[0]
-                        found_date = True
 
-                if found_date and found_name and radno_mjesto != "Data not found":
-                    break
-            if found_date:
-                break
-
-        # Premještanje PDF-a u Processed
+        # premjesti PDF u Processed
         new_pdf_path = os.path.join(processed_dir, uploaded_file.name)
         shutil.move(temp_path, new_pdf_path)
-        relative_path = os.path.relpath(new_pdf_path, one_drive_local_root)
-        relative_path = "/".join(relative_path.split(os.sep)[1:])
-        link = one_drive_url_root.rstrip('/') + '/' + quote(relative_path.replace("\\", "/"))
+
+        # generiraj OneDrive link
+        relative_path = os.path.relpath(new_pdf_path, base_dir)
+        link = f"{one_drive_url_root}/{quote(relative_path.replace(os.sep, '/'))}"
 
         append_to_excel([[ime_prezime, poslodavac, radno_mjesto, vrijedi_od, vrijedi_do, link]])
         results.append(uploaded_file.name)
 
     if results:
         st.success(f"✅ Uspješno obrađeno: {len(results)} datoteka.")
+        st.info("Podaci su spremljeni u **Radne_dozvole.xlsx**.")
     else:
         st.warning("⚠️ Nema uspješno obrađenih datoteka.")
