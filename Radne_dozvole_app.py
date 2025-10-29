@@ -7,13 +7,10 @@ from PIL import Image
 import pandas as pd
 from openpyxl import load_workbook
 import shutil
-import time
-import pythoncom
-import win32com.client as win32
 from urllib.parse import quote
 
 # ==========================================
-# ?? OSNOVNA KONFIGURACIJA
+# 🔧 OSNOVNA KONFIGURACIJA
 # ==========================================
 st.set_page_config(page_title="Radne dozvole – Automatizacija", layout="centered")
 
@@ -22,14 +19,13 @@ poppler_dir = r"C:\Python\poppler\Library\bin"
 os.environ["TESSDATA_PREFIX"] = r"C:\Program Files\Tesseract-OCR\tessdata"
 
 # ==========================================
-# ?? Odabir agencije
+# 🏢 Odabir agencije
 # ==========================================
 st.title("Automatizirana obrada radnih dozvola")
 
 st.markdown("""
 Odaberite svoju agenciju, učitajte PDF datoteku radne dozvole i pokrenite obradu.  
-Aplikacija izvlači podatke iz učitane datoteke i sprema iste u excel tablicu.
-
+Aplikacija izvlači podatke iz učitane datoteke i sprema iste u Excel tablicu.
 """)
 
 agency_folders = {
@@ -41,11 +37,9 @@ agency_folders = {
 }
 
 selected_agency = st.selectbox("Odaberi agenciju:", list(agency_folders.keys()))
-
 if not selected_agency:
     st.stop()
 
-# ?? Postavi dinamicke putanje
 agency_folder_name = agency_folders[selected_agency]
 base_dir = r"C:\Users\hr.mdrauto.CE\OneDrive - Inter Cars S.A\Documents\Radne_Dozvole_Evidencija"
 
@@ -59,7 +53,7 @@ one_drive_url_root = (
 st.success(f"Odabrana agencija: {selected_agency}")
 
 # ==========================================
-# ?? Upload PDF datoteka
+# 📤 Upload PDF datoteka
 # ==========================================
 uploaded_files = st.file_uploader("Odaberite PDF datoteku(e):", type=["pdf"], accept_multiple_files=True)
 if not uploaded_files:
@@ -67,7 +61,7 @@ if not uploaded_files:
     st.stop()
 
 # ==========================================
-# ?? Regex i OCR konfiguracija
+# 🧩 OCR & REGEX
 # ==========================================
 dpi_values = [150, 200, 300]
 known_employers = list(agency_folders.keys())
@@ -79,13 +73,13 @@ sentence_pattern = re.compile(
 )
 date_pattern = re.compile(r"\d{2}\.\d{2}\.\d{4}")
 name_pattern = re.compile(
-    r"(?:Za\s+državljanina\s+trece\s+zemlje:\s*([A-ZCCŠÐŽ\s]+),\s*rod)"
-    r"|(?:Dozvola\s+za\s+boravak\s+i\s+rad\s+izdaje\s+se\s+([A-ZCCŠÐŽ\s]+)\s+rod)",
+    r"(?:Za\s+državljanina\s+treće\s+zemlje:\s*([A-ZČĆŠĐŽ\s]+),\s*rođ)"
+    r"|(?:Dozvola\s+za\s+boravak\s+i\s+rad\s+izdaje\s+se\s+([A-ZČĆŠĐŽ\s]+)\s+rođ)",
     re.IGNORECASE
 )
 position_pattern = re.compile(
     r'(?:za\s+radno\s+mjesto(?:\s+kod\s+korisnika)?|za\s+zanimanje)\s*[:\-–]?\s*'
-    r'([A-ZCCŠÐŽa-zccšdž\/\-\s]+?)'
+    r'([A-ZČĆŠĐŽa-zčćšđž\/\-\s]+?)'
     r'(?=\s*(?:,|\.|\bkod\s+poslodavca\b|$|\d+\.\s|za\s+zanimanje))',
     re.IGNORECASE
 )
@@ -95,7 +89,7 @@ def find_employer_in_text(text):
     for employer in known_employers:
         if employer in upper_text:
             return employer
-    return selected_agency  # defaultno vraca odabranu agenciju
+    return selected_agency
 
 def clean_filename_for_name(filename: str) -> str:
     name = re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE)
@@ -113,7 +107,7 @@ def append_to_excel(data_list):
     book.close()
 
 # ==========================================
-# ?? Pokretanje obrade
+# ▶️ Pokretanje obrade
 # ==========================================
 if st.button("Pokreni obradu"):
     results = []
@@ -137,6 +131,7 @@ if st.button("Pokreni obradu"):
         radno_mjesto = "Data not found"
         vrijedi_od = "Date not found"
         vrijedi_do = "Date not found"
+
         found_date = found_name = False
 
         for page_num in range(1, total_pages + 1):
@@ -175,33 +170,17 @@ if st.button("Pokreni obradu"):
             if found_date:
                 break
 
-        # premještanje u Processed
+        # Premještanje PDF-a u Processed
         new_pdf_path = os.path.join(processed_dir, uploaded_file.name)
         shutil.move(temp_path, new_pdf_path)
         relative_path = os.path.relpath(new_pdf_path, one_drive_local_root)
-        # ukloni naziv agencije iz relacije jer je već u URL rootu
         relative_path = "/".join(relative_path.split(os.sep)[1:])
         link = one_drive_url_root.rstrip('/') + '/' + quote(relative_path.replace("\\", "/"))
-
 
         append_to_excel([[ime_prezime, poslodavac, radno_mjesto, vrijedi_od, vrijedi_do, link]])
         results.append(uploaded_file.name)
 
     if results:
         st.success(f"✅ Uspješno obrađeno: {len(results)} datoteka.")
-        try:
-            import pythoncom
-            pythoncom.CoInitialize()  # 🟢 pokreće COM sesiju
-            excel_app = win32.Dispatch("Excel.Application")
-            excel_app.Visible = False
-            wb = excel_app.Workbooks.Open(excel_file)
-            excel_app.Run("AktivirajLinkove")
-            wb.Close(SaveChanges=True)
-            excel_app.Quit()
-            pythoncom.CoUninitialize()  # 🧹 zatvara COM sesiju
-            st.info("Makro **'AktivirajLinkove'** uspješno izvršen. 🔗")
-        except Exception as e:
-            st.warning(f"⚠️ Makro nije pokrenut: {e}")
     else:
         st.warning("⚠️ Nema uspješno obrađenih datoteka.")
-
